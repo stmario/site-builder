@@ -61,22 +61,28 @@ export function McpSettingsDialog({
   }
 
   const copyConfig = async () => {
-    if (!apiKey) {
-      toast.error("Reveal your API key first.")
-      return
-    }
-    const config = {
-      mcpServers: {
-        latch: {
-          url: endpointUrl,
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
+    setLoading(true)
+    try {
+      const result = await revealMcpApiKey()
+      setApiKey(result.apiKey)
+      setEndpointUrl(result.endpointUrl)
+      const config = {
+        mcpServers: {
+          latch: {
+            url: result.endpointUrl,
+            headers: {
+              Authorization: `Bearer ${result.apiKey}`,
+            },
           },
         },
-      },
+      }
+      await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
+      toast.success("Cursor MCP config copied to clipboard.")
+    } catch {
+      toast.error("Could not copy MCP config.")
+    } finally {
+      setLoading(false)
     }
-    await navigator.clipboard.writeText(JSON.stringify(config, null, 2))
-    toast.success("Cursor MCP config copied to clipboard.")
   }
 
   return (
@@ -168,9 +174,9 @@ export function McpSettingsDialog({
             type="button"
             className="w-full"
             onClick={copyConfig}
-            disabled={!apiKey}
+            disabled={loading}
           >
-            Copy Cursor config
+            {loading ? "Copying..." : "Copy Cursor config"}
           </Button>
         </DialogFooter>
       </DialogContent>

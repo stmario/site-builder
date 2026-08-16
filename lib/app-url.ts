@@ -1,9 +1,25 @@
+/** Hostnames that redirect (e.g. apex → www). MCP clients drop auth headers on redirect. */
+const CANONICAL_HOSTS: Record<string, string> = {
+  "site-builder.site": "www.site-builder.site",
+}
+
 function isLocalhostUrl(url: string): boolean {
   try {
     const { hostname } = new URL(url)
     return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
   } catch {
     return false
+  }
+}
+
+function canonicalizePublicUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const canonicalHost = CANONICAL_HOSTS[parsed.hostname]
+    if (canonicalHost) parsed.hostname = canonicalHost
+    return parsed.toString().replace(/\/+$/, "")
+  } catch {
+    return url.replace(/\/+$/, "")
   }
 }
 
@@ -26,9 +42,9 @@ export function getAppUrl(): string {
         : process.env.V0_RUNTIME_URL ??
           (process.env.NODE_ENV === "development"
             ? "http://localhost:3000"
-            : "https://site-builder.site"))
+            : "https://www.site-builder.site"))
 
-  return fromEnv.replace(/\/+$/, "")
+  return canonicalizePublicUrl(fromEnv)
 }
 
 export function getMcpEndpointUrl(): string {

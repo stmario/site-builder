@@ -14,6 +14,7 @@ const trustedOrigins = [
     : undefined,
   process.env.NODE_ENV === "development" ? "http://localhost:3000" : undefined,
   "https://site-builder.site",
+  "https://www.site-builder.site",
 ].filter(Boolean) as string[]
 
 export const auth = betterAuth({
