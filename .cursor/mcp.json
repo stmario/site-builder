@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "latch": {
+      "url": "https://site-builder.site/api/mcp",
+      "headers": {
+        "Authorization": "Bearer latch_e2cb35a08d96fad65dea2c1c8a3df075797a2408ae46261ad66e08f08a827c1b"
+      }
+    }
+  }
+}
