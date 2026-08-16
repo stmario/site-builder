@@ -21,7 +21,7 @@ import {
   type SiteTree,
   type TreeNode,
 } from "@/lib/tree"
-import { sanitizeHtml } from "@/lib/sanitize"
+import { sanitizeHtml } from "@/lib/sanitize.server"
 import { and, desc, eq, ne } from "drizzle-orm"
 
 async function generateUniqueSiteSlug(name: string, excludeId?: string) {

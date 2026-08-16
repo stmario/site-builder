@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { sanitizeHtml } from "@/lib/sanitize"
+import { sanitizeHtml } from "@/lib/sanitize.client"
 import type { SitePage, SiteRef } from "@/lib/tree"
 import { findPageByParam, parseInternalPageTarget } from "@/lib/site-navigation"
 import { cn } from "@/lib/utils"
