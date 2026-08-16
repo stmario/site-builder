@@ -5,11 +5,12 @@ import sanitizeHtmlLib from "sanitize-html"
 // instead of jsdom-based DOMPurify so Vercel serverless bundles stay stable.
 export function sanitizeHtml(dirty: string): string {
   return sanitizeHtmlLib(dirty, {
-    allowedTags: [...sanitizeHtmlLib.defaults.allowedTags, "style"],
+    allowedTags: [...sanitizeHtmlLib.defaults.allowedTags, "style", "img", "figure", "figcaption"],
     allowedAttributes: {
       ...sanitizeHtmlLib.defaults.allowedAttributes,
       "*": [...(sanitizeHtmlLib.defaults.allowedAttributes["*"] ?? []), "style"],
       a: ["href", "name", "target", "rel"],
+      img: ["src", "srcset", "alt", "title", "width", "height", "loading", "style"],
     },
     disallowedTagsMode: "discard",
   })
