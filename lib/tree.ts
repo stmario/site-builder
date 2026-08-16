@@ -287,6 +287,20 @@ export function createHtmlNode(html: string, label = "Component"): TreeNode {
   }
 }
 
+/** Collect every HTML component under a subtree (e.g. the page root). */
+export function collectHtmlNodes(
+  node: TreeNode,
+  out: { id: string; label: string; html: string }[] = [],
+): { id: string; label: string; html: string }[] {
+  if (node.kind === "html") {
+    out.push({ id: node.id, label: node.label, html: node.html ?? "" })
+  }
+  for (const child of node.children ?? []) {
+    collectHtmlNodes(child, out)
+  }
+  return out
+}
+
 // ── Immutable tree operations ──────────────────────────────────────
 export function findNode(node: TreeNode, id: string): TreeNode | null {
   if (node.id === id) return node

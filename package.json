@@ -16,7 +16,6 @@
     "better-auth": "^1.6.26",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "dompurify": "^3.4.13",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.16.0",
     "mcp-handler": "^2.1.1",
@@ -35,7 +34,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
-    "@types/dompurify": "^3.2.0",
     "@types/node": "^24",
     "@types/pg": "^8.21.0",
     "@types/react": "^19",

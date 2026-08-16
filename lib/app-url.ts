@@ -1,8 +1,24 @@
+function isLocalhostUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url)
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+  } catch {
+    return false
+  }
+}
+
+function publicEnvUrl(name: "BETTER_AUTH_URL" | "APP_URL"): string | undefined {
+  const value = process.env[name]?.trim()
+  if (!value) return undefined
+  if (process.env.NODE_ENV !== "development" && isLocalhostUrl(value)) return undefined
+  return value.replace(/\/+$/, "")
+}
+
 /** Public base URL for this app (no trailing slash). */
 export function getAppUrl(): string {
   const fromEnv =
-    process.env.BETTER_AUTH_URL ??
-    process.env.APP_URL ??
+    publicEnvUrl("BETTER_AUTH_URL") ??
+    publicEnvUrl("APP_URL") ??
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : process.env.VERCEL_URL

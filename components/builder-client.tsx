@@ -361,6 +361,30 @@ export function BuilderClient({
     setSelectedId(child.id)
   }
 
+  const handleApplyPageEdits = (
+    parentId: string,
+    updates: { id: string; html: string }[],
+    additions: { label: string; html: string }[],
+  ) => {
+    const addedIds: string[] = []
+    mutate((root) => {
+      let next = root
+      for (const update of updates) {
+        next = updateNode(next, update.id, (n) => ({
+          ...n,
+          html: update.html,
+        }))
+      }
+      for (const item of additions) {
+        const child = createHtmlNode(item.html, item.label || "Component")
+        addedIds.push(child.id)
+        next = insertChild(next, parentId, child)
+      }
+      return next
+    })
+    return addedIds
+  }
+
   const handleAddContainerChild = (
     parentId: string,
     direction: "row" | "column",
@@ -741,6 +765,7 @@ export function BuilderClient({
               onMoveDown={(id) => mutate((root) => moveNodeDown(root, id))}
               onRelabel={handleRelabel}
               onApplyHtml={handleApplyHtml}
+              onApplyPageEdits={handleApplyPageEdits}
             />
           </aside>
         )}

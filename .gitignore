@@ -36,6 +36,7 @@ coverage/
 Thumbs.db
 
 # Editors
+.cursor/
 .idea/
 *.swp
 *.swo

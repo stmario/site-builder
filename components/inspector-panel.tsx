@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import type { TreeNode } from "@/lib/tree"
+import { collectHtmlNodes } from "@/lib/tree"
 import {
   getInspectorHeightValue,
   getInspectorLayoutSizeRange,
@@ -12,7 +13,7 @@ import {
   HEIGHT_STEP,
   layoutSizeLabel,
 } from "@/lib/layout-size"
-import { editComponentWithLlm } from "@/app/actions/llm"
+import { editComponentWithLlm, editPageWithLlm } from "@/app/actions/llm"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -54,6 +55,7 @@ export function InspectorPanel({
   onMoveDown,
   onRelabel,
   onApplyHtml,
+  onApplyPageEdits,
 }: {
   node: TreeNode | null
   parentNode: TreeNode | null
@@ -73,17 +75,28 @@ export function InspectorPanel({
   onMoveDown: (id: string) => void
   onRelabel: (id: string, label: string) => void
   onApplyHtml: (id: string, html: string) => void
+  onApplyPageEdits: (
+    parentId: string,
+    updates: { id: string; html: string }[],
+    additions: { label: string; html: string }[],
+  ) => string[]
 }) {
   const [instruction, setInstruction] = useState("")
   const [busy, setBusy] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [prevHtml, setPrevHtml] = useState<string | null>(null)
+  const [prevPageSnapshot, setPrevPageSnapshot] = useState<
+    Map<string, string> | null
+  >(null)
+  const [prevAddedIds, setPrevAddedIds] = useState<string[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Reset the transcript when the selection changes.
   useEffect(() => {
     setMessages([])
     setPrevHtml(null)
+    setPrevPageSnapshot(null)
+    setPrevAddedIds([])
     setInstruction("")
   }, [node?.id])
 
@@ -116,9 +129,10 @@ export function InspectorPanel({
     : 0
   const heightValue = getInspectorHeightValue(node)
   const hasExplicitHeight = node.height != null
+  const showChat = node.kind === "html" || isRoot
 
   const runEdit = async () => {
-    if (!instruction.trim() || node.kind !== "html") return
+    if (!instruction.trim() || !showChat) return
     if (!hasLlm) {
       toast.error("Configure your LLM endpoint first.")
       return
@@ -128,21 +142,60 @@ export function InspectorPanel({
     setInstruction("")
     setBusy(true)
     try {
-      const result = await editComponentWithLlm({
-        currentHtml: node.html ?? "",
-        instruction: prompt,
-        siteContext,
-      })
-      if ("error" in result) {
-        setMessages((m) => [...m, { role: "system", text: result.error }])
-        toast.error("LLM edit failed.")
-      } else {
-        setPrevHtml(node.html ?? "")
-        onApplyHtml(node.id, result.html)
-        setMessages((m) => [
-          ...m,
-          { role: "assistant", text: "Updated the component." },
-        ])
+      if (isRoot) {
+        const components = collectHtmlNodes(node)
+        const result = await editPageWithLlm({
+          components,
+          instruction: prompt,
+          siteContext,
+        })
+        if ("error" in result) {
+          setMessages((m) => [...m, { role: "system", text: result.error }])
+          toast.error("LLM edit failed.")
+        } else {
+          const snapshot = new Map(
+            components.map((c) => [c.id, c.html]),
+          )
+          const addedIds = onApplyPageEdits(
+            node.id,
+            result.updates,
+            result.add,
+          )
+          setPrevPageSnapshot(snapshot)
+          setPrevAddedIds(addedIds)
+          const parts: string[] = []
+          if (result.updates.length > 0) {
+            parts.push(
+              `Updated ${result.updates.length} component${result.updates.length === 1 ? "" : "s"}.`,
+            )
+          }
+          if (result.add.length > 0) {
+            parts.push(
+              `Added ${result.add.length} section${result.add.length === 1 ? "" : "s"}.`,
+            )
+          }
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", text: parts.join(" ") },
+          ])
+        }
+      } else if (node.kind === "html") {
+        const result = await editComponentWithLlm({
+          currentHtml: node.html ?? "",
+          instruction: prompt,
+          siteContext,
+        })
+        if ("error" in result) {
+          setMessages((m) => [...m, { role: "system", text: result.error }])
+          toast.error("LLM edit failed.")
+        } else {
+          setPrevHtml(node.html ?? "")
+          onApplyHtml(node.id, result.html)
+          setMessages((m) => [
+            ...m,
+            { role: "assistant", text: "Updated the component." },
+          ])
+        }
       }
     } finally {
       setBusy(false)
@@ -150,6 +203,19 @@ export function InspectorPanel({
   }
 
   const undo = () => {
+    if (isRoot) {
+      if (!prevPageSnapshot) return
+      for (const [id, html] of prevPageSnapshot) {
+        onApplyHtml(id, html)
+      }
+      for (const id of prevAddedIds) {
+        onDelete(id)
+      }
+      setPrevPageSnapshot(null)
+      setPrevAddedIds([])
+      setMessages((m) => [...m, { role: "system", text: "Reverted last edit." }])
+      return
+    }
     if (prevHtml === null) return
     onApplyHtml(node.id, prevHtml)
     setPrevHtml(null)
@@ -427,7 +493,7 @@ export function InspectorPanel({
           )}
         </div>
 
-        {node.kind === "html" && (
+        {showChat && (
           <>
             <Separator />
             {/* Chat transcript */}
@@ -435,18 +501,34 @@ export function InspectorPanel({
               <div className="flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Edit with chat
+                  {isRoot ? "Edit page with chat" : "Edit with chat"}
                 </span>
               </div>
 
               {messages.length === 0 ? (
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Describe a change — e.g.{" "}
-                  <span className="text-foreground">
-                    &quot;add a link to Page 2 in the nav&quot;
-                  </span>
-                  . Internal page links must use the builder URLs from your
-                  site&apos;s page list.
+                  {isRoot ? (
+                    <>
+                      Describe a page-wide change — e.g.{" "}
+                      <span className="text-foreground">
+                        &quot;add a footer with social links&quot;
+                      </span>{" "}
+                      or{" "}
+                      <span className="text-foreground">
+                        &quot;make the hero headline larger&quot;
+                      </span>
+                      . The model can update existing sections or add new ones.
+                    </>
+                  ) : (
+                    <>
+                      Describe a change — e.g.{" "}
+                      <span className="text-foreground">
+                        &quot;add a link to Page 2 in the nav&quot;
+                      </span>
+                      . Internal page links must use the builder URLs from your
+                      site&apos;s page list.
+                    </>
+                  )}
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -467,7 +549,8 @@ export function InspectorPanel({
                 </ul>
               )}
 
-              {prevHtml !== null && (
+              {(prevHtml !== null ||
+                (isRoot && prevPageSnapshot !== null)) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -484,7 +567,7 @@ export function InspectorPanel({
       </div>
 
       {/* Chat input */}
-      {node.kind === "html" && (
+      {showChat && (
         <div className="border-t border-border p-3">
           {!hasLlm && (
             <p className="mb-2 text-xs text-destructive">
@@ -506,7 +589,9 @@ export function InspectorPanel({
                   runEdit()
                 }
               }}
-              placeholder="Describe the change..."
+              placeholder={
+                isRoot ? "Describe a page change..." : "Describe the change..."
+              }
               disabled={busy}
               className="text-sm"
             />

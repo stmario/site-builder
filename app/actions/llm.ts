@@ -100,9 +100,51 @@ Linking between pages in this site:
 
 function stripFences(text: string): string {
   let out = text.trim()
-  const fence = out.match(/^```(?:html)?\s*([\s\S]*?)\s*```$/i)
+  const fence = out.match(/^```(?:html|json)?\s*([\s\S]*?)\s*```$/i)
   if (fence) out = fence[1].trim()
   return out
+}
+
+const PAGE_SYSTEM_PROMPT = `You are an expert front-end engineer editing a full page inside a website builder.
+You are given the current HTML components on the page, site page context, and an instruction describing a change.
+Return ONLY valid JSON (no markdown, no commentary) with this shape:
+{
+  "updates": [{ "id": "cmp_...", "html": "..." }],
+  "add": [{ "label": "Section name", "html": "..." }]
+}
+
+Rules:
+- "updates" — rewrite existing components by id. Include only components that should change.
+- "add" — append new self-contained HTML sections when the instruction asks for new content.
+- Each html value is raw HTML only: inline styles or a scoped <style> block, no <html>/<head>/<body>, no <script>.
+- Preserve unchanged components by omitting them from "updates".
+- Make results visually polished and responsive.
+
+Linking between pages in this site:
+- When linking to another page in the same site, use ONLY the exact href values listed under SITE PAGES.
+- If PUBLISHED is yes, internal links MUST use public /s/... URLs only. NEVER use /builder/ URLs when PUBLISHED is yes.
+- If PUBLISHED is no, internal links use builder URLs: /builder/{siteId}?page={slug}
+- NEVER invent URLs such as page2.html, /page2, /builder/page2, or http://localhost:3000/builder/page2.html.
+- NEVER use .html extensions for internal page links.
+- Use relative paths exactly as provided in SITE PAGES (starting with /s/ or /builder/).
+- For external websites, use full https:// URLs.`
+
+function parsePageEditResponse(text: string): {
+  updates: { id: string; html: string }[]
+  add: { label: string; html: string }[]
+} | null {
+  try {
+    const parsed = JSON.parse(stripFences(text)) as {
+      updates?: { id: string; html: string }[]
+      add?: { label: string; html: string }[]
+    }
+    return {
+      updates: Array.isArray(parsed.updates) ? parsed.updates : [],
+      add: Array.isArray(parsed.add) ? parsed.add : [],
+    }
+  } catch {
+    return null
+  }
 }
 
 // Calls the user's own OpenAI-compatible chat completions endpoint.
@@ -162,6 +204,96 @@ export async function editComponentWithLlm(input: {
     }
 
     return { html: stripFences(content) }
+  } catch (err) {
+    return {
+      error: `Could not reach the LLM endpoint. ${
+        err instanceof Error ? err.message : "Unknown error"
+      }`,
+    }
+  }
+}
+
+export async function editPageWithLlm(input: {
+  components: { id: string; label: string; html: string }[]
+  instruction: string
+  siteContext: string
+}): Promise<
+  | {
+      updates: { id: string; html: string }[]
+      add: { label: string; html: string }[]
+    }
+  | { error: string }
+> {
+  const userId = await getUserId()
+  const rows = await db
+    .select()
+    .from(llmConfig)
+    .where(eq(llmConfig.userId, userId))
+    .limit(1)
+  const cfg = rows[0]
+
+  if (!cfg || !cfg.baseUrl || !cfg.apiKey) {
+    return {
+      error:
+        "No LLM endpoint configured. Add your OpenAI-compatible URL and API key in Settings.",
+    }
+  }
+
+  const componentBlock =
+    input.components.length === 0
+      ? "PAGE COMPONENTS: (none yet)"
+      : input.components
+          .map(
+            (c) =>
+              `[${c.id}] ${c.label}:\n${c.html || "(empty)"}`,
+          )
+          .join("\n\n")
+
+  const endpoint = `${cfg.baseUrl.replace(/\/+$/, "")}/chat/completions`
+
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: cfg.model,
+        temperature: 0.4,
+        messages: [
+          { role: "system", content: PAGE_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: `${input.siteContext}\n\n${componentBlock}\n\nINSTRUCTION:\n${input.instruction}`,
+          },
+        ],
+      }),
+    })
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "")
+      return {
+        error: `LLM request failed (${res.status}). ${detail.slice(0, 200)}`,
+      }
+    }
+
+    const data = await res.json()
+    const content: string | undefined = data?.choices?.[0]?.message?.content
+    if (!content) {
+      return { error: "The LLM returned an empty response." }
+    }
+
+    const parsed = parsePageEditResponse(content)
+    if (!parsed) {
+      return { error: "The LLM returned an invalid page edit response." }
+    }
+
+    if (parsed.updates.length === 0 && parsed.add.length === 0) {
+      return { error: "The LLM did not propose any page changes." }
+    }
+
+    return parsed
   } catch (err) {
     return {
       error: `Could not reach the LLM endpoint. ${

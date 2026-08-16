@@ -1,12 +1,8 @@
-import DOMPurify from "dompurify"
+import sanitizeHtmlLib from "sanitize-html"
+import { sanitizeHtmlOptions } from "@/lib/sanitize-options"
 
-// Browser-only sanitizer for rendered site HTML in client components.
+// Browser-safe sanitizer for rendered site HTML in client components.
+// Uses sanitize-html (not DOMPurify) so SSR of client components works without window.
 export function sanitizeHtml(dirty: string): string {
-  return DOMPurify.sanitize(dirty, {
-    ADD_TAGS: ["style", "figure", "figcaption"],
-    ADD_ATTR: ["target"],
-    FORBID_TAGS: ["script", "iframe", "object", "embed", "link", "meta"],
-    FORBID_ATTR: ["onerror", "onload", "onclick"],
-    ALLOW_UNKNOWN_PROTOCOLS: false,
-  })
+  return sanitizeHtmlLib(dirty, sanitizeHtmlOptions)
 }
